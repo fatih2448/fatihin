@@ -1,5 +1,6 @@
 const express  = require("express");
 const http     = require("http");
+const https    = require("https");
 const { Server } = require("socket.io");
 const bcrypt   = require("bcryptjs");
 const multer   = require("multer");
@@ -12,13 +13,17 @@ const server = http.createServer(app);
 const io     = new Server(server);
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+// index.html neredeyse oradan sun (public/ varsa oradan, yoksa root'tan)
+const publicDir = fs.existsSync(path.join(__dirname, "public"))
+  ? path.join(__dirname, "public")
+  : __dirname;
+app.use(express.static(publicDir));
 
 // ─────────────────────────────────────────────
 //  HOST BİLGİLERİ
 // ─────────────────────────────────────────────
 const HOST_USERNAME = "admin";
-const HOST_PASSWORD = bcrypt.hashSync("4321adam", 10);
+const HOST_PASSWORD = bcrypt.hashSync("1234", 10);
 // ─────────────────────────────────────────────
 
 const validTokens = new Set();
@@ -38,25 +43,21 @@ const upload = multer({
 });
 
 // ─── Oda durumu ───────────────────────────────
-// position ve updatedAt her zaman doğru tutulur.
-// Birisi katıldığında computedPosition() ile anlık pozisyonu hesaplarız.
 let room = {
-  type:      "none",    // "none" | "youtube" | "local"
+  type:      "none",
   videoId:   null,
   videoUrl:  null,
   videoName: null,
   isPlaying: false,
-  position:  0,         // isPlaying=false ise sabit pozisyon
-  updatedAt: Date.now(),// isPlaying=true ise bu andan itibaren geçen süre eklenir
+  position:  0,
+  updatedAt: Date.now(),
 };
 
-// Anlık pozisyonu hesapla
 function currentPos() {
   if (!room.isPlaying) return room.position;
   return room.position + (Date.now() - room.updatedAt) / 1000;
 }
 
-// Durum snapshot'ı — her zaman gerçek pozisyonu içerir
 function snapshot() {
   return { ...room, position: currentPos(), updatedAt: Date.now(), isPlaying: room.isPlaying };
 }
@@ -73,6 +74,40 @@ function parseCookies(req) {
 function isHost(req) {
   const { host_token } = parseCookies(req);
   return host_token && validTokens.has(host_token);
+}
+
+// ─────────────────────────────────────────────
+//  🏓 PING ENDPOINT
+//  UptimeRobot / cron-job.org bu URL'yi çağırır:
+//  https://SİTEN.onrender.com/ping
+// ─────────────────────────────────────────────
+app.get("/ping", (req, res) => {
+  res.json({
+    status:  "ok",
+    time:    new Date().toISOString(),
+    uptime:  Math.floor(process.uptime()) + "s",
+    viewers: Object.keys(connectedUsers).length,
+  });
+});
+
+// ─────────────────────────────────────────────
+//  🔄 SELF-PING (ikincil önlem)
+//  Render, RENDER_EXTERNAL_URL'yi otomatik set eder.
+//  Her 14 dakikada bir kendi /ping'ine istek atar.
+// ─────────────────────────────────────────────
+const SELF_URL = process.env.RENDER_EXTERNAL_URL;
+if (SELF_URL) {
+  const INTERVAL = 14 * 60 * 1000; // 14 dakika
+  setInterval(() => {
+    const target = `${SELF_URL}/ping`;
+    const mod = target.startsWith("https") ? https : http;
+    const req = mod.get(target, (res) => {
+      console.log(`[self-ping] ✓ ${res.statusCode} — ${new Date().toLocaleTimeString("tr-TR")}`);
+    });
+    req.on("error", (err) => console.warn(`[self-ping] ✗ ${err.message}`));
+    req.end();
+  }, INTERVAL);
+  console.log(`🏓 Self-ping aktif: ${SELF_URL}/ping  (her 14 dakikada bir)`);
 }
 
 // ─── API ──────────────────────────────────────
@@ -115,15 +150,12 @@ app.delete("/api/videos/:name", (req, res) => {
 // ─── Socket.io ────────────────────────────────
 io.on("connection", (socket) => {
 
-  // Katıl — anlık pozisyonu gönder
   socket.on("join", ({ role }) => {
     connectedUsers[socket.id] = { role };
-    // Yeni katılana o anki gerçek durumu gönder
     socket.emit("sync", snapshot());
     broadcastViewers();
   });
 
-  // ── Host komutları ──────────────────────────
   function hostOnly(fn) {
     return (...args) => {
       if (connectedUsers[socket.id]?.role !== "host") return;
@@ -142,13 +174,11 @@ io.on("connection", (socket) => {
   }));
 
   socket.on("play", hostOnly(({ position }) => {
-    // Pozisyonu kaydet, oynatmayı başlat
     room = { ...room, isPlaying:true, position: position ?? currentPos(), updatedAt:Date.now() };
     io.emit("sync", snapshot());
   }));
 
   socket.on("pause", hostOnly(({ position }) => {
-    // Duraklat — pozisyonu kaydet
     room = { ...room, isPlaying:false, position: position ?? currentPos(), updatedAt:Date.now() };
     io.emit("sync", snapshot());
   }));
@@ -170,6 +200,7 @@ function broadcastViewers() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n🎬 Watch Party → http://localhost:${PORT}`);
-  console.log(`👑 Host: ${HOST_USERNAME} / 1234\n`);
+  console.log(`\n🎬 Watch Party    → http://localhost:${PORT}`);
+  console.log(`👑 Host           → ${HOST_USERNAME} / 1234`);
+  console.log(`🏓 Ping endpoint  → http://localhost:${PORT}/ping\n`);
 });
