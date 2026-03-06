@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Watch Party</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Bebas+Neue&display=swap" rel="stylesheet"/>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --accent:#e04848;--gold:#f0a830;--bg2:#0d0d1a;--bg3:#121220;
+  --border:#1e1e2e;--text:#ddd8cc;--muted:#55556a;--r:8px;
+}
+html{scroll-behavior:smooth}
+body{
+  background:#080810;
+  color:var(--text);
+  font-family:'DM Sans',system-ui,sans-serif;
+  overflow-x:hidden;
+  overflow-y:auto;
+  user-select:none;
+  min-height:100vh;
+}
+
+/* ── LAYOUT ── */
+#layout{display:flex;flex-direction:column;min-height:100vh}
+
+/* ── TOP HEADER BAR ── */
+#hdr{
+  flex-shrink:0;
+  height:52px;
+  background:rgba(8,8,16,0.95);
+  border-bottom:1px solid var(--border);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 20px;
+  backdrop-filter:blur(12px);
+  position:sticky;
+  top:0;
+  z-index:100;
+}
+.hl{display:flex;align-items:center;gap:10px}
+.dot{width:7px;height:7px;background:var(--accent);border-radius:50%;box-shadow:0 0 8px var(--accent);animation:pulse 2s infinite;flex-shrink:0}
+.logo-text{
+  font-family:'Bebas Neue',sans-serif;
+  font-size:22px;
+  letter-spacing:3px;
+  color:#fff;
+  line-height:1;
+}
+.logo-text span{color:var(--accent)}
+.hr2{display:flex;align-items:center;gap:10px}
+.vcnt{
+  font-size:12px;
+  color:rgba(255,255,255,.45);
+  background:rgba(255,255,255,.05);
+  padding:4px 10px;
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,.08);
+}
+#btn-host-login{
+  padding:5px 14px;
+  background:rgba(240,168,48,.1);
+  border:1px solid rgba(240,168,48,.3);
+  border-radius:20px;
+  color:var(--gold);
+  font-size:11px;
+  font-weight:500;
+  cursor:pointer;
+  transition:all .2s;
+  font-family:'DM Sans',sans-serif;
+}
+#btn-host-login:hover{background:rgba(240,168,48,.22);border-color:rgba(240,168,48,.55)}
+.hbadge{
+  display:none;
+  align-items:center;
+  gap:6px;
+  padding:5px 14px;
+  background:rgba(240,168,48,.08);
+  border:1px solid rgba(240,168,48,.22);
+  border-radius:20px;
+  font-size:11px;
+  color:var(--gold);
+  font-weight:500;
+}
+#btn-panel{cursor:pointer;font-size:14px;opacity:.6;transition:opacity .15s;margin-left:2px}
+#btn-panel:hover{opacity:1}
+
+/* ── MAIN CONTENT ── */
+#main-content{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:28px 20px 0;
+}
+
+/* ── VIDEO SECTION ── */
+#video-section{
+  width:100%;
+  max-width:960px;
+}
+
+/* ── VIDEO CONTAINER ── */
+#vc{
+  position:relative;
+  width:100%;
+  aspect-ratio:16/9;
+  background:#000;
+  border-radius:12px;
+  overflow:hidden;
+  box-shadow:0 24px 80px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.06);
+  cursor:none;
+}
+#vc.active{cursor:default}
+
+/* Video elements */
+#yt-player{
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  border:none;pointer-events:none;display:none;
+}
+#local-player{
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  object-fit:contain;
+  display:none;background:#000;
+}
+#viewer-block{position:absolute;inset:0;z-index:3;display:none}
+
+/* No video */
+.novid{
+  position:absolute;inset:0;
+  display:none;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:14px;
+  background:radial-gradient(ellipse at center, #111128 0%, #080810 100%);
+}
+.novid svg{opacity:.12}
+.novid span{font-size:14px;color:#444;letter-spacing:.5px}
+
+/* Click to play */
+#cto{
+  position:absolute;inset:0;z-index:20;
+  display:none;
+  align-items:center;justify-content:center;flex-direction:column;
+  gap:14px;
+  background:rgba(0,0,0,.55);
+  backdrop-filter:blur(2px);
+  cursor:pointer;
+}
+#cto.on{display:flex}
+.cto-btn{
+  width:80px;height:80px;border-radius:50%;
+  background:rgba(224,72,72,.9);
+  display:flex;align-items:center;justify-content:center;
+  font-size:28px;
+  box-shadow:0 0 40px rgba(224,72,72,.55);
+  transition:transform .15s;
+}
+#cto:hover .cto-btn{transform:scale(1.1)}
+.cto-txt{font-size:12px;color:rgba(255,255,255,.55);letter-spacing:.5px}
+
+/* ── CONTROLS ── */
+#controls{
+  position:absolute;bottom:0;left:0;right:0;z-index:10;
+  padding:0 14px 12px;
+  background:linear-gradient(transparent,rgba(0,0,0,.92) 60%);
+  transition:opacity .25s,transform .25s;
+}
+#controls.hidden{opacity:0;transform:translateY(4px);pointer-events:none}
+
+.prog-wrap{height:18px;display:flex;align-items:center;cursor:pointer;position:relative;margin-bottom:4px}
+.prog-bg{position:absolute;left:0;right:0;height:3px;background:rgba(255,255,255,.18);border-radius:2px;transition:height .12s}
+.prog-buf{position:absolute;left:0;height:3px;background:rgba(255,255,255,.28);border-radius:2px;width:0%}
+.prog-fill{position:absolute;left:0;height:3px;background:var(--accent);border-radius:2px;width:0%}
+.prog-thumb{position:absolute;width:13px;height:13px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);top:50%;left:0%;opacity:0;transition:opacity .15s;pointer-events:none;box-shadow:0 1px 6px rgba(0,0,0,.6)}
+.prog-wrap:hover .prog-bg,.prog-wrap:hover .prog-fill,.prog-wrap:hover .prog-buf{height:5px}
+.prog-wrap:hover .prog-thumb{opacity:1}
+.prog-tooltip{position:absolute;bottom:22px;background:rgba(0,0,0,.85);padding:3px 8px;border-radius:4px;font-size:11px;color:#fff;transform:translateX(-50%);pointer-events:none;white-space:nowrap;display:none}
+
+.btn-row{display:flex;align-items:center;gap:2px;height:38px}
+.ybtn{
+  width:38px;height:38px;border-radius:6px;
+  border:none;background:transparent;
+  color:#fff;font-size:18px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .12s,transform .08s;
+  flex-shrink:0;opacity:.88;
+}
+.ybtn:hover{background:rgba(255,255,255,.12);opacity:1;transform:scale(1.07)}
+.ybtn.big{font-size:22px}
+.time-disp{font-size:12px;color:rgba(255,255,255,.75);padding:0 8px;white-space:nowrap;letter-spacing:.3px;font-variant-numeric:tabular-nums}
+.spacer{flex:1}
+
+.vol-wrap{display:flex;align-items:center;gap:5px}
+.vol-slider{width:0;overflow:hidden;transition:width .2s;height:3px;-webkit-appearance:none;appearance:none;background:rgba(255,255,255,.3);border-radius:2px;cursor:pointer;outline:none}
+.vol-wrap:hover .vol-slider{width:64px}
+.vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:#fff}
+
+/* ── FOOTER ── */
+#footer{
+  margin-top:32px;
+  height:44px;
+  flex-shrink:0;
+  background:#07070f;
+  border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  gap:8px;
+  font-size:11.5px;
+  color:var(--muted);
+  letter-spacing:.4px;
+}
+#footer .sep{opacity:.25}
+#footer .credit{color:rgba(255,255,255,.3)}
+.name-glow{
+  font-weight:700;
+  font-size:12.5px;
+  letter-spacing:.5px;
+  background:linear-gradient(90deg,#f0a830 0%,#ff7c5c 50%,#e04848 100%);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+  filter:drop-shadow(0 0 8px rgba(240,168,48,.5));
+  animation:nameGlow 3s ease-in-out infinite;
+}
+@keyframes nameGlow{
+  0%,100%{filter:drop-shadow(0 0 6px rgba(240,168,48,.45))}
+  50%{filter:drop-shadow(0 0 14px rgba(240,168,48,.8))}
+}
+
+/* ── HOST PANEL ── */
+#hpanel{
+  position:fixed;right:-360px;top:52px;bottom:0;
+  width:340px;
+  background:var(--bg2);
+  border-left:1px solid var(--border);
+  display:flex;flex-direction:column;
+  z-index:200;overflow-y:auto;
+  transition:right .25s cubic-bezier(.4,0,.2,1);
+}
+#hpanel.open{right:0}
+.ps{padding:16px;border-bottom:1px solid var(--border)}
+.ps:last-child{border-bottom:none}
+.pst{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.ytrow{display:flex;gap:7px}
+.ytrow input{flex:1;padding:8px 11px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:13px;outline:none;font-family:'DM Sans',sans-serif}
+.ytrow input:focus{border-color:rgba(224,72,72,.45)}
+.ytrow button{padding:8px 13px;background:rgba(224,72,72,.18);border:1px solid rgba(224,72,72,.4);border-radius:var(--r);color:#ff9090;cursor:pointer;font-size:12px;white-space:nowrap;transition:background .15s;font-family:'DM Sans',sans-serif}
+.ytrow button:hover{background:rgba(224,72,72,.3)}
+.uarea{border:2px dashed var(--border);border-radius:var(--r);padding:20px 14px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative}
+.uarea:hover,.uarea.drag{border-color:rgba(224,72,72,.5);background:rgba(224,72,72,.04)}
+.uarea input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.uicon{font-size:24px;margin-bottom:5px}
+.utxt{font-size:11px;color:var(--muted)}.utxt span{color:var(--accent)}
+#uprog{display:none;margin-top:9px}
+.pbar-w{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:4px}
+.pbar{height:100%;background:var(--accent);width:0%;transition:width .15s;border-radius:2px}
+.ptxt{font-size:11px;color:var(--muted)}
+
+.vlist{display:flex;flex-direction:column;gap:6px}
+.vi{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;transition:border-color .15s}
+.vi:hover{border-color:rgba(224,72,72,.4)}
+.vi.active{border-color:rgba(224,72,72,.6);background:rgba(224,72,72,.05)}
+.viname{flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.videl{font-size:12px;color:var(--muted);padding:2px 5px;border-radius:3px;transition:color .15s}
+.videl:hover{color:var(--accent)}
+
+/* ── LOGIN MODAL ── */
+.moverlay{position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(10px);display:none;align-items:center;justify-content:center;z-index:300}
+.moverlay.open{display:flex}
+.mbox{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px 28px;width:300px;box-shadow:0 40px 80px rgba(0,0,0,.8)}
+.mbox h2{font-size:18px;font-weight:600;color:#fff;margin-bottom:3px}
+.mbox p{font-size:12px;color:var(--muted);margin-bottom:22px}
+.fld{margin-bottom:12px}
+.fld label{display:block;font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}
+.fld input{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:13px;outline:none;transition:border-color .2s;font-family:'DM Sans',sans-serif}
+.fld input:focus{border-color:rgba(224,72,72,.5)}
+.mbtns{display:flex;gap:7px;margin-top:4px}
+.bprim{flex:1;padding:11px;background:var(--accent);border:none;border-radius:var(--r);color:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s;font-family:'DM Sans',sans-serif}
+.bprim:hover{opacity:.88}
+.bsec{padding:11px 14px;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--muted);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif}
+.merr{margin-top:10px;padding:8px 11px;background:rgba(224,72,72,.1);border:1px solid rgba(224,72,72,.3);border-radius:6px;color:#ff9090;font-size:12px;display:none}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+input::placeholder{color:#333}
+
+/* ── TAM EKRAN ── */
+:fullscreen #vc{
+  border-radius:0 !important;
+  aspect-ratio:unset !important;
+  width:100vw !important;
+  height:100vh !important;
+}
+:fullscreen #video-section{ max-width:100% !important; }
+:-webkit-full-screen #vc{
+  border-radius:0 !important;
+  width:100vw !important;
+  height:100vh !important;
+}
+
+/* Host panel tam ekranda gizle */
+:fullscreen #hpanel{display:none}
+
+/* Video bölümü altı boşluk */
+#video-section{padding-bottom:4px}
+
+/* Hover highlight on vc */
+#vc::after{
+  content:'';
+  position:absolute;inset:0;
+  border-radius:12px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);
+  pointer-events:none;
+  z-index:50;
+}
+:fullscreen #vc::after{display:none}
+</style>
+</head>
+<body>
+
+<div id="layout">
+
+  <!-- ── TOP HEADER BAR ── -->
+  <div id="hdr">
+    <div class="hl">
+      <div class="dot"></div>
+      <span class="logo-text">Watch<span>Party</span></span>
+    </div>
+    <div class="hr2">
+      <span class="vcnt" id="vcnt">👁 0</span>
+      <button id="btn-host-login">👑 Host Girişi</button>
+      <div class="hbadge" id="hbadge">👑 <span id="hname">admin</span> <span id="btn-panel">⚙️</span></div>
+    </div>
+  </div>
+
+  <!-- ── MAIN CONTENT ── -->
+  <div id="main-content">
+    <div id="video-section">
+
+      <!-- Video Container -->
+      <div id="vc">
+
+        <!-- No video state -->
+        <div class="novid" id="novid" style="display:flex">
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span>Host bir video başlatacak...</span>
+        </div>
+
+        <!-- Viewer block (prevents viewer interaction) -->
+        <div id="viewer-block"></div>
+
+        <!-- Click to play overlay -->
+        <div id="cto">
+          <div class="cto-btn">▶</div>
+          <span class="cto-txt">Oynatmak için tıkla</span>
+        </div>
+
+        <!-- Players -->
+        <iframe id="yt-player" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        <video id="local-player" preload="auto"></video>
+
+        <!-- Controls Overlay -->
+        <div id="controls">
+          <div class="prog-wrap" id="prog-wrap">
+            <div class="prog-bg"></div>
+            <div class="prog-buf" id="prog-buf"></div>
+            <div class="prog-fill" id="prog-fill"></div>
+            <div class="prog-thumb" id="prog-thumb"></div>
+            <div class="prog-tooltip" id="prog-tooltip"></div>
+          </div>
+          <div class="btn-row">
+            <button class="ybtn big" id="b-play"  style="display:none">▶</button>
+            <button class="ybtn big" id="b-pause" style="display:none">⏸</button>
+            <button class="ybtn"     id="b-back"  style="display:none" title="10s geri">⏪</button>
+            <button class="ybtn"     id="b-fwd"   style="display:none" title="10s ileri">⏩</button>
+            <div class="vol-wrap">
+              <button class="ybtn" id="b-vol">🔊</button>
+              <input type="range" class="vol-slider" id="vol-slider" min="0" max="1" step="0.05" value="1"/>
+            </div>
+            <span class="time-disp" id="time-disp">0:00 / 0:00</span>
+            <div class="spacer"></div>
+            <button class="ybtn" id="b-fs" title="Tam ekran (F)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+      </div><!-- #vc -->
+    </div><!-- #video-section -->
+  </div><!-- #main-content -->
+
+  <!-- ── FOOTER ── -->
+  <div id="footer">
+    <span class="credit">© 2025 Watch Party</span>
+    <span class="sep">·</span>
+    <span class="credit">Tasarım &amp; Geliştirme:</span>
+    <span class="name-glow">Fatih Kılıç</span>
+  </div>
+
+</div><!-- #layout -->
+
+<!-- ── HOST PANEL ── -->
+<div id="hpanel">
+  <div class="ps">
+    <div class="pst">📺 YouTube</div>
+    <div class="ytrow">
+      <input type="text" id="ytinp" placeholder="YouTube URL veya Video ID..."/>
+      <button id="b-yt">Yükle</button>
+    </div>
+  </div>
+  <div class="ps">
+    <div class="pst">📁 Bilgisayardan Video</div>
+    <div class="uarea" id="uarea">
+      <input type="file" id="finput" accept="video/mp4,video/webm,video/ogg,.mkv,.mov,.avi"/>
+      <div class="uicon">🎬</div>
+      <div class="utxt">Tıkla veya sürükle-bırak<br/><span>MP4, WebM, MKV, MOV</span></div>
+    </div>
+    <div id="uprog"><div class="pbar-w"><div class="pbar" id="pbar"></div></div><div class="ptxt" id="ptxt"></div></div>
+  </div>
+  <div class="ps">
+    <div class="pst">🗂️ Yüklenen Videolar</div>
+    <div class="vlist" id="vlist"><span style="font-size:11px;color:var(--muted)">Henüz video yok</span></div>
+  </div>
+</div>
+
+<!-- ── LOGIN MODAL ── -->
+<div class="moverlay" id="modal">
+  <div class="mbox">
+    <h2>👑 Host Girişi</h2>
+    <p>Video kontrolü için giriş yap</p>
+    <div class="fld"><label>Kullanıcı Adı</label><input type="text" id="iu" autocomplete="username"/></div>
+    <div class="fld"><label>Şifre</label><input type="password" id="ip" autocomplete="current-password"/></div>
+    <div class="mbtns"><button class="bsec" id="b-cancel">İptal</button><button class="bprim" id="b-login">Giriş Yap →</button></div>
+    <div class="merr" id="merr"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+let socket, role = "viewer";
+let curState = null, activeUrl = null;
+let duration = 0, isDragging = false;
+let pendingState = null;
+let hideTimer = null, panelOpen = false;
+let muted = false, volume = 1;
+let lastSyncTime = 0;
+
+const vc=$("vc"),novid=$("novid"),cto=$("cto");
+const ytEl=$("yt-player"),lpEl=$("local-player"),viewerBlock=$("viewer-block");
+const controls=$("controls");
+const progWrap=$("prog-wrap"),progFill=$("prog-fill"),progBuf=$("prog-buf"),progThumb=$("prog-thumb"),progTip=$("prog-tooltip");
+const bPlay=$("b-play"),bPause=$("b-pause"),bBack=$("b-back"),bFwd=$("b-fwd"),bFs=$("b-fs");
+const bVol=$("b-vol"),volSlider=$("vol-slider"),timeDisp=$("time-disp");
+const btnHL=$("btn-host-login"),hbadge=$("hbadge"),hname=$("hname"),btnPanel=$("btn-panel"),vcnt=$("vcnt");
+const modal=$("modal"),iu=$("iu"),ip=$("ip"),merr=$("merr");
+const ytinp=$("ytinp"),bYt=$("b-yt");
+const finput=$("finput"),uarea=$("uarea"),uprog=$("uprog"),pbar=$("pbar"),ptxt=$("ptxt");
+const vlist=$("vlist");
+
+function fmt(s){s=Math.floor(s||0);const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60;return h>0?`${h}:${pad(m)}:${pad(ss)}`:`${m}:${pad(ss)}`}
+function pad(n){return String(n).padStart(2,"0")}
+function fmtSz(b){if(b<1048576)return(b/1024).toFixed(0)+"KB";if(b<1073741824)return(b/1048576).toFixed(1)+"MB";return(b/1073741824).toFixed(2)+"GB"}
+function extractYTId(url){const m=url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]{11})/);if(m)return m[1];if(/^[a-zA-Z0-9_-]{11}$/.test(url))return url;return null}
+function livePos(state){if(!state||!state.isPlaying)return state?state.position:0;return state.position+(Date.now()-state.updatedAt)/1000}
+
+// RAF progress loop
+let rafId=null;
+function startProgressLoop(){if(rafId)return;(function tick(){updateProgress();rafId=requestAnimationFrame(tick)})()}
+function stopProgressLoop(){if(rafId){cancelAnimationFrame(rafId);rafId=null}}
+function updateProgress(){
+  if(!curState||!duration||isDragging)return;
+  const pos=curState.type==="local"?lpEl.currentTime:livePos(curState);
+  const pct=Math.min(pos/duration*100,100);
+  progFill.style.width=pct+"%";
+  progThumb.style.left=pct+"%";
+  timeDisp.textContent=fmt(pos)+" / "+fmt(duration);
+}
+
+async function boot(){
+  const d=await fetch("/api/me").then(r=>r.json());
+  if(d.role==="host"){role="host";showHostUI(d.username);}
+  else{showViewerUI();}
+  connectSocket();
+}
+
+function showHostUI(username){
+  btnHL.style.display="none";
+  hbadge.style.display="flex";
+  hname.textContent=username;
+  [bPlay,bPause,bBack,bFwd].forEach(b=>b.style.display="flex");
+  viewerBlock.style.display="none";
+  loadVideoList();
+}
+function showViewerUI(){
+  viewerBlock.style.display="block";
+  lpEl.removeAttribute("controls");
+  lpEl.style.pointerEvents="none";
+  ytEl.style.pointerEvents="none";
+}
+
+cto.addEventListener("click",()=>{
+  cto.classList.remove("on");
+  if(pendingState){
+    const st=pendingState;pendingState=null;
+    const p=livePos(st);
+    if(st.type==="local"){lpEl.currentTime=p;lpEl.play().catch(()=>{});}
+    else{ytCmd("seekTo",[p,true]);ytCmd("playVideo");}
+  }
+});
+
+btnHL.addEventListener("click",()=>{modal.classList.add("open");iu.focus();});
+$("b-cancel").addEventListener("click",closeModal);
+modal.addEventListener("click",e=>{if(e.target===modal)closeModal();});
+function closeModal(){modal.classList.remove("open");merr.style.display="none";iu.value="";ip.value="";}
+
+async function doLogin(){
+  const u=iu.value.trim(),p=ip.value;
+  if(!u||!p)return showErr("Tüm alanları doldur.");
+  $("b-login").textContent="...";$("b-login").disabled=true;
+  try{
+    const res=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});
+    const d=await res.json();
+    if(!res.ok)return showErr(d.error||"Hata!");
+    role="host";closeModal();showHostUI(d.username);
+    socket.emit("join",{role:"host"});
+  }catch{showErr("Bağlanılamadı.");}
+  finally{$("b-login").textContent="Giriş Yap →";$("b-login").disabled=false;}
+}
+function showErr(m){merr.textContent=m;merr.style.display="block";}
+$("b-login").addEventListener("click",doLogin);
+ip.addEventListener("keydown",e=>e.key==="Enter"&&doLogin());
+
+btnPanel.addEventListener("click",e=>{
+  e.stopPropagation();
+  panelOpen=!panelOpen;
+  $("hpanel").classList.toggle("open",panelOpen);
+});
+document.addEventListener("click",e=>{
+  if(panelOpen&&!$("hpanel").contains(e.target)&&e.target!==btnPanel){
+    panelOpen=false;
+    $("hpanel").classList.remove("open");
+  }
+});
+
+function connectSocket(){
+  socket=io({transports:["websocket"]});
+  socket.on("connect",()=>socket.emit("join",{role}));
+  socket.on("sync",applySync);
+  socket.on("viewers",n=>vcnt.textContent="👁 "+n);
+}
+
+function applySync(state){
+  if(state.updatedAt===lastSyncTime&&state.type===curState?.type&&!state.isPlaying)return;
+  lastSyncTime=state.updatedAt;
+  curState=state;
+  if(state.type==="none"){showNone();return;}
+  if(state.type==="youtube"){
+    if(ytEl.getAttribute("data-vid")!==state.videoId){
+      ytEl.setAttribute("data-vid",state.videoId);
+      showYT();
+      const p=livePos(state);
+      ytEl.src=`https://www.youtube.com/embed/${state.videoId}?enablejsapi=1&autoplay=0&controls=0&start=${Math.floor(p)}&rel=0&modestbranding=1&iv_load_policy=3`;
+      setTimeout(()=>{const p2=livePos(state);ytCmd("seekTo",[p2,true]);if(state.isPlaying)ytCmd("playVideo");else ytCmd("pauseVideo");},1800);
+    }else{
+      const p=livePos(state);ytCmd("seekTo",[p,true]);
+      if(state.isPlaying)ytCmd("playVideo");else ytCmd("pauseVideo");
+    }
+    startProgressLoop();return;
+  }
+  if(state.type==="local"){
+    if(activeUrl!==state.videoUrl){
+      activeUrl=state.videoUrl;showLocal();
+      lpEl.src=state.videoUrl;lpEl.load();
+      lpEl.addEventListener("loadedmetadata",()=>{
+        duration=lpEl.duration;
+        const p=livePos(state);lpEl.currentTime=p;
+        if(state.isPlaying){lpEl.play().catch(()=>{pendingState=state;cto.classList.add("on");});}
+        startProgressLoop();
+      },{once:true});
+    }else{
+      const pos=livePos(state);
+      if(Math.abs(lpEl.currentTime-pos)>1.2)lpEl.currentTime=pos;
+      if(state.isPlaying&&lpEl.paused){lpEl.play().catch(()=>{pendingState=state;cto.classList.add("on");});}
+      if(!state.isPlaying&&!lpEl.paused)lpEl.pause();
+    }
+  }
+}
+
+function showNone(){novid.style.display="flex";ytEl.style.display="none";lpEl.style.display="none";stopProgressLoop();}
+function showYT(){novid.style.display="none";lpEl.style.display="none";ytEl.style.display="block";}
+function showLocal(){novid.style.display="none";ytEl.style.display="none";lpEl.style.display="block";}
+function ytCmd(fn,args=[]){ytEl.contentWindow?.postMessage(JSON.stringify({event:"command",func:fn,args}),"*");}
+
+window.addEventListener("message",e=>{
+  try{const d=JSON.parse(e.data);if(d.event==="infoDelivery"&&d.info&&d.info.duration>0)duration=d.info.duration;}catch{}
+});
+lpEl.addEventListener("loadedmetadata",()=>{duration=lpEl.duration;});
+lpEl.addEventListener("progress",()=>{
+  if(!duration)return;
+  try{const end=lpEl.buffered.end(lpEl.buffered.length-1);progBuf.style.width=(end/duration*100)+"%";}catch{}
+});
+
+function getPos(){return curState?.type==="local"?lpEl.currentTime:livePos(curState);}
+function doSeek(p){if(curState?.type==="local")lpEl.currentTime=p;else ytCmd("seekTo",[p,true]);}
+
+bPlay.addEventListener("click",()=>{const p=getPos();socket.emit("play",{position:p});if(curState?.type==="local")lpEl.play().catch(()=>{});else ytCmd("playVideo");bPlay.style.display="none";bPause.style.display="flex";});
+bPause.addEventListener("click",()=>{const p=getPos();socket.emit("pause",{position:p});if(curState?.type==="local")lpEl.pause();else ytCmd("pauseVideo");bPause.style.display="none";bPlay.style.display="flex";});
+bBack.addEventListener("click",()=>{const p=Math.max(0,getPos()-10);socket.emit("seek",{position:p});doSeek(p);});
+bFwd.addEventListener("click",()=>{const p=getPos()+10;socket.emit("seek",{position:p});doSeek(p);});
+
+setInterval(()=>{
+  if(role!=="host"||!curState)return;
+  const playing=curState.type==="local"?!lpEl.paused:curState.isPlaying;
+  bPlay.style.display=playing?"none":"flex";
+  bPause.style.display=playing?"flex":"none";
+},500);
+
+// Progress drag
+progWrap.addEventListener("mousedown",e=>{if(role!=="host"||!duration)return;isDragging=true;seekTo(e);});
+document.addEventListener("mousemove",e=>{if(isDragging)seekTo(e);});
+document.addEventListener("mouseup",e=>{if(!isDragging)return;isDragging=false;const p=getPosFromEvent(e);socket.emit("seek",{position:p});doSeek(p);});
+progWrap.addEventListener("mousemove",e=>{if(!duration)return;progTip.style.display="block";progTip.style.left=(getPct(e)*100)+"%";progTip.textContent=fmt(getPosFromEvent(e));});
+progWrap.addEventListener("mouseleave",()=>{progTip.style.display="none";});
+function getPct(e){const r=progWrap.getBoundingClientRect();return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));}
+function getPosFromEvent(e){return getPct(e)*duration;}
+function seekTo(e){const p=getPosFromEvent(e),pct=getPct(e)*100;progFill.style.width=pct+"%";progThumb.style.left=pct+"%";timeDisp.textContent=fmt(p)+" / "+fmt(duration);}
+
+// Volume
+volSlider.addEventListener("input",()=>{volume=parseFloat(volSlider.value);lpEl.volume=volume;ytCmd("setVolume",[volume*100]);muted=volume===0;bVol.textContent=muted?"🔇":volume<0.5?"🔉":"🔊";});
+bVol.addEventListener("click",()=>{muted=!muted;lpEl.muted=muted;ytCmd(muted?"mute":"unMute");bVol.textContent=muted?"🔇":"🔊";volSlider.value=muted?0:volume;});
+
+// Fullscreen
+bFs.addEventListener("click",toggleFs);
+vc.addEventListener("dblclick",toggleFs);
+function toggleFs(){document.fullscreenElement?document.exitFullscreen():vc.requestFullscreen().catch(()=>{});}
+document.addEventListener("fullscreenchange",()=>{
+  const inFs=!!document.fullscreenElement;
+  bFs.innerHTML=inFs
+    ?`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>`
+    :`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>`;
+});
+
+// UI auto-hide (sadece video içindeyken)
+function showUI(){
+  vc.classList.add("active");
+  controls.classList.remove("hidden");
+  clearTimeout(hideTimer);
+  hideTimer=setTimeout(()=>{
+    if(!panelOpen&&!isDragging){
+      controls.classList.add("hidden");
+      vc.classList.remove("active");
+    }
+  },2500);
+}
+vc.addEventListener("mousemove",showUI);
+vc.addEventListener("touchstart",showUI,{passive:true});
+vc.addEventListener("mouseleave",()=>{
+  clearTimeout(hideTimer);
+  if(!isDragging){controls.classList.add("hidden");vc.classList.remove("active");}
+});
+
+document.addEventListener("keydown",e=>{
+  if(e.target.tagName==="INPUT")return;
+  if(e.code==="Space"&&role==="host"){e.preventDefault();curState?.isPlaying?bPause.click():bPlay.click();}
+  if(e.code==="ArrowLeft"&&role==="host")bBack.click();
+  if(e.code==="ArrowRight"&&role==="host")bFwd.click();
+  if(e.code==="KeyF")toggleFs();
+});
+
+bYt.addEventListener("click",loadYT);
+ytinp.addEventListener("keydown",e=>e.key==="Enter"&&loadYT());
+function loadYT(){const id=extractYTId(ytinp.value.trim());if(!id)return alert("Geçerli bir YouTube URL'si gir!");socket.emit("setYoutube",{videoId:id});ytinp.value="";}
+
+finput.addEventListener("change",()=>finput.files[0]&&uploadFile(finput.files[0]));
+uarea.addEventListener("dragover",e=>{e.preventDefault();uarea.classList.add("drag");});
+uarea.addEventListener("dragleave",()=>uarea.classList.remove("drag"));
+uarea.addEventListener("drop",e=>{e.preventDefault();uarea.classList.remove("drag");const f=e.dataTransfer.files[0];if(f)uploadFile(f);});
+
+function uploadFile(file){
+  uprog.style.display="block";pbar.style.width="0%";ptxt.textContent="Yükleniyor...";
+  const fd=new FormData();fd.append("video",file);
+  const xhr=new XMLHttpRequest();xhr.open("POST","/api/upload");
+  xhr.upload.onprogress=e=>{if(e.lengthComputable){const pc=Math.round(e.loaded/e.total*100);pbar.style.width=pc+"%";ptxt.textContent=`%${pc} — ${fmtSz(e.loaded)} / ${fmtSz(e.total)}`;}};
+  xhr.onload=()=>{uprog.style.display="none";if(xhr.status===200){const d=JSON.parse(xhr.responseText);loadVideoList();socket.emit("setLocal",{url:d.url,name:d.name});}else ptxt.textContent="Hata!";};
+  xhr.onerror=()=>{ptxt.textContent="Bağlantı hatası!";};
+  xhr.send(fd);
+}
+
+async function loadVideoList(){
+  const list=await fetch("/api/videos").then(r=>r.json());
+  if(!list.length){vlist.innerHTML='<span style="font-size:11px;color:var(--muted)">Henüz video yok</span>';return;}
+  vlist.innerHTML=list.map(v=>`
+    <div class="vi ${curState?.videoUrl===v.url?"active":""}" data-url="${v.url}" data-name="${v.name}">
+      <span>🎬</span>
+      <span class="viname" title="${v.name}">${v.name.replace(/^video_\d+_?/,"")}</span>
+      <span class="videl" data-name="${v.name}">🗑</span>
+    </div>`).join("");
+  vlist.querySelectorAll(".vi").forEach(el=>el.addEventListener("click",e=>{if(e.target.classList.contains("videl"))return;socket.emit("setLocal",{url:el.dataset.url,name:el.dataset.name});}));
+  vlist.querySelectorAll(".videl").forEach(el=>el.addEventListener("click",async()=>{if(!confirm("Videoyu sil?"))return;await fetch("/api/videos/"+encodeURIComponent(el.dataset.name),{method:"DELETE"});loadVideoList();}));
+}
+
+boot();
+
+// ── Render'ı uyutmamak için her 10 dakikada ping ──
+setInterval(() => fetch("/ping").catch(() => {}), 10 * 60 * 1000);
+</script>
+</body>
+</html>
